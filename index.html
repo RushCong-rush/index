@@ -1,0 +1,2415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>MPU6050姿态采集+地震谱分析</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjs@11.8.0/lib/browser/math.min.js"></script>
+
+    <style>
+        /* 深色模式样式 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "微软雅黑", Arial, sans-serif;
+        }
+        
+        body {
+            font-family: "微软雅黑", Arial;
+            margin: 0;
+            padding: 20px;
+            background: #121212;
+            color: #e0e0e0;
+        }
+        
+        /* 页面容器 */
+        .page-container {
+            display: none;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        
+        .page-collect { display: block; }
+        .page-analysis { display: none; }
+
+        /* 采集页样式 - 调整布局为立方体腾出空间 */
+        .container-collect {
+            display: flex;
+            justify-content: space-between;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+            flex-wrap: wrap;
+            position: relative;
+        }
+        
+        .left-section {
+            flex: 1;
+            text-align: center;
+            padding-right: 20px;
+            min-width: 300px;
+            margin-left: 220px; /* 为左侧立方体腾出空间 */
+            background: #1e1e1e;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        
+        .right-section {
+            width: 500px;
+            min-width: 300px;
+            flex: 1;
+            background: #1e1e1e;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        
+        #chart-container-collect {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            background: #1a1a1a;
+        }
+        
+        /* 图表区域字体颜色调整 */
+        .echarts-tooltip,
+        .echarts-title,
+        .echarts-axis-label,
+        .echarts-legend-text,
+        .echarts-series-label,
+        .echarts-graphical-text {
+            color: #e0e0e0 !important;
+            fill: #e0e0e0 !important;
+        }
+        
+        /* 图表网格线颜色调整 */
+        .echarts-axis-line,
+        .echarts-axis-tick,
+        .echarts-grid-line {
+            stroke: #444 !important;
+        }
+        
+        #connectBtn {
+            padding: 12px 24px;
+            font-size: 18px;
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0, 123, 255, 0.2);
+        }
+        
+        #connectBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 123, 255, 0.3);
+        }
+        
+        .angle-alarm-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 50px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        
+        #angleValue {
+            font-size: 100px;
+            font-weight: bold;
+            color: #28a745;
+            margin: 0;
+            transition: color 0.3s ease;
+            text-shadow: 0 0 10px rgba(40, 167, 69, 0.3);
+        }
+        
+        #angleValue.alarm {
+            color: #dc3545;
+            animation: blink 1s infinite;
+            text-shadow: 0 0 10px rgba(220, 53, 69, 0.5);
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .alarm-setting {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .alarm-setting label {
+            font-size: 18px;
+            color: #b0b0b0;
+        }
+        
+        #alarmThreshold {
+            width: 80px;
+            padding: 8px;
+            font-size: 16px;
+            text-align: center;
+            border: 2px solid #444;
+            border-radius: 6px;
+            background: #2a2a2a;
+            color: #e0e0e0;
+        }
+        
+        #setAlarmBtn {
+            padding: 8px 16px;
+            font-size: 16px;
+            background: linear-gradient(135deg, #28a745, #1e7e34);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        #setAlarmBtn:hover {
+            background: linear-gradient(135deg, #218838, #1c7430);
+            transform: translateY(-2px);
+        }
+        
+        #status {
+            font-size: 20px;
+            color: #b0b0b0;
+            margin: 30px 0;
+            padding: 15px;
+            background: #2a2a2a;
+            border-radius: 8px;
+        }
+        
+        #alarmStatus {
+            font-size: 18px;
+            color: #dc3545;
+            height: 24px;
+            transition: opacity 0.3s ease;
+            font-weight: bold;
+        }
+        
+        /* 地震标记控制区 */
+        .earthquake-mark {
+            margin: 25px 0;
+            padding: 15px;
+            background: #2a2a2a;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+            border: 1px solid #333;
+        }
+        
+        .earthquake-mark button {
+            padding: 10px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 600;
+        }
+        
+        #markStartBtn {
+            background: linear-gradient(135deg, #4299e1, #3182ce);
+            color: #fff;
+        }
+        
+        #markStartBtn:hover { 
+            background: linear-gradient(135deg, #3182ce, #2b6cb0);
+            transform: translateY(-2px);
+        }
+        
+        #markStartBtn.active { 
+            background: linear-gradient(135deg, #2b6cb0, #2c5282);
+        }
+        
+        #markEndBtn {
+            background: linear-gradient(135deg, #e53e3e, #c53030);
+            color: #fff;
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        #markEndBtn.active { 
+            opacity: 1; 
+            cursor: pointer; 
+        }
+        
+        #markEndBtn.active:hover {
+            background: linear-gradient(135deg, #c53030, #9b2c2c);
+            transform: translateY(-2px);
+        }
+        
+        #earthquakeStatus {
+            font-size: 16px;
+            color: #e0e0e0;
+            font-weight: 500;
+        }
+        
+        #spectrumBtn {
+            margin-top: 15px;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #9f7aea, #805ad5);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            opacity: 0.5;
+            cursor: not-allowed;
+            position: relative;
+            right: 410px;
+            bottom: 400px;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+        
+        #spectrumBtn.active { 
+            opacity: 1; 
+            cursor: pointer; 
+        }
+        
+        #spectrumBtn:hover { 
+            background: linear-gradient(135deg, #805ad5, #6b46c1);
+            transform: translateY(-2px);
+        }
+
+        /* 立方体样式 - 移动到页面左侧空白处 */
+        .cube-container {
+            width: 200px;
+            height: 200px;
+            position: absolute;
+            left: -50px;
+            top: 200px;
+            perspective: 1000px;
+        }
+        
+        .cube {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.1s ease;
+        }
+        
+        .cube.alarm {
+            border: 3px solid #dc3545;
+            transition: border 0.5s ease;
+            border-radius: 10px;
+        }
+        
+        .face {
+            position: absolute;
+            width: 200px;
+            height: 200px;
+            opacity: 0.9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            border: 2px solid #333;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+        }
+        
+        .front  { 
+            background: linear-gradient(135deg, #007bff, #0056b3); 
+            transform: translateZ(100px); 
+        }
+        
+        .back   { 
+            background: linear-gradient(135deg, #28a745, #1e7e34); 
+            transform: rotateY(180deg) translateZ(100px); 
+        }
+        
+        .left   { 
+            background: linear-gradient(135deg, #ffc107, #e0a800); 
+            transform: rotateY(-90deg) translateZ(100px); 
+        }
+        
+        .right  { 
+            background: linear-gradient(135deg, #dc3545, #c82333); 
+            transform: rotateY(90deg) translateZ(100px); 
+        }
+        
+        .top    { 
+            background: linear-gradient(135deg, #17a2b8, #138496); 
+            transform: rotateX(90deg) translateZ(100px); 
+        }
+        
+        .bottom { 
+            background: linear-gradient(135deg, #6c757d, #545b62); 
+            transform: rotateX(-90deg) translateZ(100px); 
+        }
+
+        /* 振动模拟按钮美化 */
+        .vibration-controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .vibration-btn {
+            padding: 14px 30px;
+            border: none;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .vibration-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+        
+        .vibration-btn:hover::before {
+            left: 100%;
+        }
+        
+        .vibration-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+        }
+        
+        .vibration-btn:active {
+            transform: translateY(-1px);
+        }
+        
+        #startVibrationBtn {
+            background: linear-gradient(135deg, #2ecc71, #1abc9c);
+            color: white;
+        }
+        
+        #startVibrationBtn:hover {
+            box-shadow: 0 6px 15px rgba(46, 204, 113, 0.4);
+        }
+        
+        #pauseVibrationBtn {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+        }
+        
+        #pauseVibrationBtn:hover {
+            box-shadow: 0 6px 15px rgba(231, 76, 60, 0.4);
+        }
+
+        /* 分析页样式 */
+        .header-analysis {
+            background: linear-gradient(135deg, #2d3748, #4a5568);
+            color: #fff;
+            padding: 18px 30px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        
+        .header-analysis h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .data-basic {
+            font-size: 14px;
+            display: flex;
+            gap: 25px;
+            flex-wrap: wrap;
+            color: #e0e0e0;
+        }
+        
+        .data-basic span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .data-basic span strong {
+            color: #4299e1;
+        }
+        
+        .container-analysis {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+            width: 100%;
+        }
+
+        /* 建筑模型选择器 */
+        .model-selector {
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .model-selector select {
+            padding: 8px 15px;
+            border-radius: 6px;
+            border: 1px solid #444;
+            font-size: 16px;
+            background: #2a2a2a;
+            color: #e0e0e0;
+        }
+
+        /* 建筑模拟区 */
+        .house-simulate {
+            flex: 1;
+            min-width: 350px;
+            background: #1e1e1e;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .house-simulate h2 {
+            font-size: 18px;
+            color: #e0e0e0;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #333;
+            width: 100%;
+            text-align: center;
+        }
+
+        /* 3D建筑模型样式 */
+        .house-container {
+            width: 300px;
+            height: 350px;
+            perspective: 1200px;
+            margin: 15px 0 25px;
+            position: relative;
+        }
+        
+        .building-model {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.05s linear;
+        }
+
+        /* 乡村别墅3D模型 */
+        .villa-model {
+            display: block;
+        }
+        
+        .villa-building {
+            position: absolute;
+            bottom: 20px;
+            left: 25%;
+            width: 50%;
+            height: 180px;
+            transform-style: preserve-3d;
+        }
+        
+        .villa-base {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 20px;
+            background: linear-gradient(135deg, #8b4513, #654321);
+            transform: rotateX(90deg) translateZ(-10px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+        
+        .villa-wall-front, .villa-wall-back, .villa-wall-left, .villa-wall-right {
+            position: absolute;
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border: 2px solid #d97706;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.2);
+        }
+        
+        .villa-wall-front, .villa-wall-back {
+            width: 100%;
+            height: 180px;
+        }
+        
+        .villa-wall-front { 
+            transform: translateZ(75px); 
+        }
+        
+        .villa-wall-back { 
+            transform: translateZ(-75px) rotateY(180deg); 
+        }
+        
+        .villa-wall-left, .villa-wall-right {
+            width: 150px;
+            height: 180px;
+        }
+        
+        .villa-wall-left { 
+            transform: rotateY(-90deg) translateZ(75px); 
+        }
+        
+        .villa-wall-right { 
+            transform: rotateY(90deg) translateZ(75px); 
+        }
+
+        /* 别墅门窗 */
+        .villa-door {
+            position: absolute;
+            bottom: 0;
+            left: 40%;
+            width: 30px;
+            height: 50px;
+            background: linear-gradient(135deg, #7c2d12, #5a1a0a);
+            transform: translateZ(1px);
+            border-radius: 5px 5px 0 0;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+        
+        .villa-window {
+            position: absolute;
+            width: 25px;
+            height: 25px;
+            background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+            border: 2px solid #0ea5e9;
+            transform: translateZ(1px);
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        
+        .villa-window-front1 { top: 40px; left: 20px; }
+        .villa-window-front2 { top: 40px; right: 20px; }
+        .villa-window-left1 { top: 40px; left: 20px; }
+        .villa-window-left2 { top: 100px; left: 20px; }
+
+        /* 别墅屋顶 */
+        .villa-roof {
+            position: absolute;
+            bottom: 180px;
+            left: 0;
+            width: 100%;
+            height: 80px;
+            transform-style: preserve-3d;
+        }
+        
+        .roof-front, .roof-back, .roof-left, .roof-right {
+            position: absolute;
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+            border: 2px solid #b91c1c;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        
+        .roof-front, .roof-back {
+            width: 100%;
+            height: 80px;
+            clip-path: polygon(0% 100%, 50% 0%, 100% 100%);
+        }
+        
+        .roof-front { transform: translateZ(75px); }
+        .roof-back { transform: translateZ(-75px) rotateY(180deg); }
+        .roof-left, .roof-right {
+            width: 150px;
+            height: 80px;
+            clip-path: polygon(0% 100%, 50% 0%, 100% 100%);
+        }
+        
+        .roof-left { transform: rotateY(-90deg) translateZ(75px); }
+        .roof-right { transform: rotateY(90deg) translateZ(75px); }
+
+        /* 公寓楼3D模型 */
+        .apartment-model {
+            display: none;
+        }
+        
+        .apartment-building {
+            position: absolute;
+            bottom: 20px;
+            left: 20%;
+            width: 60%;
+            height: 220px;
+            transform-style: preserve-3d;
+        }
+        
+        .apartment-base {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 20px;
+            background: linear-gradient(135deg, #4b5563, #374151);
+            transform: rotateX(90deg) translateZ(-10px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+        
+        .apartment-wall-front, .apartment-wall-back, .apartment-wall-left, .apartment-wall-right {
+            position: absolute;
+            background: linear-gradient(135deg, #cbd5e0, #a0aec0);
+            border: 1px solid #94a3b8;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.2);
+        }
+        
+        .apartment-wall-front, .apartment-wall-back {
+            width: 100%;
+            height: 220px;
+        }
+        
+        .apartment-wall-front { transform: translateZ(90px); }
+        .apartment-wall-back { transform: translateZ(-90px) rotateY(180deg); }
+        .apartment-wall-left, .apartment-wall-right {
+            width: 180px;
+            height: 220px;
+        }
+        
+        .apartment-wall-left { transform: rotateY(-90deg) translateZ(90px); }
+        .apartment-wall-right { transform: rotateY(90deg) translateZ(90px); }
+
+        /* 公寓窗户 */
+        .apartment-window {
+            position: absolute;
+            width: 25px;
+            height: 35px;
+            background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+            border: 2px solid #64748b;
+            transform: translateZ(1px);
+            border-radius: 3px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        
+        .apartment-window-row1 { top: 30px; }
+        .apartment-window-row2 { top: 90px; }
+        .apartment-window-row3 { top: 150px; }
+        .apartment-window-col1 { left: 20px; }
+        .apartment-window-col2 { left: 70px; }
+        .apartment-window-col3 { right: 20px; }
+
+        /* 普通住宅3D模型 */
+        .house-model {
+            display: none;
+        }
+        
+        .residence-building {
+            position: absolute;
+            bottom: 20px;
+            left: 20%;
+            width: 60%;
+            height: 150px;
+            transform-style: preserve-3d;
+        }
+        
+        .residence-base {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 20px;
+            background: linear-gradient(135deg, #7c2d12, #5a1a0a);
+            transform: rotateX(90deg) translateZ(-10px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+        
+        .residence-wall-front, .residence-wall-back, .residence-wall-left, .residence-wall-right {
+            position: absolute;
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border: 2px solid #d97706;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.2);
+        }
+        
+        .residence-wall-front, .residence-wall-back {
+            width: 100%;
+            height: 150px;
+        }
+        
+        .residence-wall-front { transform: translateZ(75px); }
+        .residence-wall-back { transform: translateZ(-75px) rotateY(180deg); }
+        .residence-wall-left, .residence-wall-right {
+            width: 150px;
+            height: 150px;
+        }
+        
+        .residence-wall-left { transform: rotateY(-90deg) translateZ(75px); }
+        .residence-wall-right { transform: rotateY(90deg) translateZ(75px); }
+
+        /* 住宅门窗 */
+        .residence-door {
+            position: absolute;
+            bottom: 0;
+            left: 35%;
+            width: 30px;
+            height: 40px;
+            background: linear-gradient(135deg, #7c2d12, #5a1a0a);
+            transform: translateZ(1px);
+            border-radius: 5px 5px 0 0;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+        
+        .residence-window {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+            border: 2px solid #0ea5e9;
+            transform: translateZ(1px);
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        
+        .residence-window1 { top: 40px; left: 20px; }
+        .residence-window2 { top: 40px; right: 20px; }
+
+        /* 住宅屋顶 */
+        .residence-roof {
+            position: absolute;
+            bottom: 150px;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            transform-style: preserve-3d;
+        }
+        
+        .residence-roof-front, .residence-roof-back, .residence-roof-left, .residence-roof-right {
+            position: absolute;
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+            border: 2px solid #b91c1c;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        
+        .residence-roof-front, .residence-roof-back {
+            width: 100%;
+            height: 60px;
+            clip-path: polygon(0% 100%, 50% 0%, 100% 100%);
+        }
+        
+        .residence-roof-front { transform: translateZ(75px); }
+        .residence-roof-back { transform: translateZ(-75px) rotateY(180deg); }
+        .residence-roof-left, .residence-roof-right {
+            width: 150px;
+            height: 60px;
+            clip-path: polygon(0% 100%, 50% 0%, 100% 100%);
+        }
+        
+        .residence-roof-left { transform: rotateY(-90deg) translateZ(75px); }
+        .residence-roof-right { transform: rotateY(90deg) translateZ(75px); }
+
+        /* 地震记录管理样式 */
+        .earthquake-records {
+            margin: 20px 0;
+            padding: 15px;
+            background: #2a2a2a;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        
+        .earthquake-records h3 {
+            margin-bottom: 10px;
+            color: #e0e0e0;
+            font-size: 16px;
+        }
+        
+        .records-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+        
+        .record-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            margin: 5px 0;
+            background: #333;
+            border-radius: 6px;
+            border: 1px solid #444;
+            transition: all 0.3s ease;
+        }
+        
+        .record-item:hover {
+            background: #3a3a3a;
+            transform: translateY(-2px);
+        }
+        
+        .record-info {
+            flex: 1;
+        }
+        
+        .record-time {
+            font-weight: 600;
+            color: #e0e0e0;
+        }
+        
+        .record-duration {
+            font-size: 12px;
+            color: #b0b0b0;
+        }
+        
+        .record-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .record-btn {
+            padding: 4px 8px;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+        
+        .delete-btn {
+            background: linear-gradient(135deg, #e53e3e, #c53030);
+            color: white;
+        }
+        
+        .delete-btn:hover {
+            background: linear-gradient(135deg, #c53030, #9b2c2c);
+            transform: translateY(-2px);
+        }
+        
+        .select-btn {
+            background: linear-gradient(135deg, #4299e1, #3182ce);
+            color: white;
+        }
+        
+        .select-btn:hover {
+            background: linear-gradient(135deg, #3182ce, #2b6cb0);
+            transform: translateY(-2px);
+        }
+
+        /* 地震谱分析区 */
+        .spectrum-analysis {
+            flex: 2;
+            min-width: 600px;
+            background: #1e1e1e;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+            width: 100%;
+        }
+        
+        .spectrum-analysis h2 {
+            font-size: 18px;
+            color: #e0e0e0;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #333;
+        }
+        
+        .charts-group {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 100%;
+        }
+        
+        .chart-item {
+            width: 100%;
+            height: 280px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            padding: 10px;
+            min-width: 400px;
+            background: #1a1a1a;
+        }
+        
+        .danger-frequency {
+            margin-top: 25px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 15px 20px;
+        }
+        
+        .danger-frequency h3 {
+            font-size: 16px;
+            color: #e0e0e0;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .danger-frequency h3 i {
+            color: #e53e3e;
+            font-style: normal;
+        }
+        
+        .frequency-list {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .frequency-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .frequency-item .num {
+            width: 60px;
+            height: 32px;
+            background: linear-gradient(135deg, #e53e3e, #c53030);
+            color: #fff;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            box-shadow: 0 2px 5px rgba(229, 62, 62, 0.3);
+        }
+        
+        .frequency-item .val {
+            font-size: 14px;
+            color: #e0e0e0;
+        }
+        
+        .frequency-item .val strong {
+            color: #e53e3e;
+            font-size: 15px;
+        }
+
+        /* 底部操作区 */
+        .footer-control {
+            margin-top: 20px;
+            display: flex;
+            justify-content: flex-end;
+        }
+        
+        .footer-control button {
+            padding: 10px 25px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #48bb78, #38a169);
+            color: #fff;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 600;
+        }
+        
+        .footer-control button:hover {
+            background: linear-gradient(135deg, #38a169, #2f855a);
+            transform: translateY(-2px);
+        }
+
+        /* 无数据提示 */
+        .no-data {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1e1e1e;
+            width: 400px;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            text-align: center;
+            display: none;
+            z-index: 100;
+            border: 1px solid #333;
+        }
+        
+        .no-data h2 {
+            color: #e53e3e;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        
+        .no-data p {
+            color: #b0b0b0;
+            margin-bottom: 25px;
+        }
+        
+        .no-data button {
+            padding: 10px 25px;
+            background: linear-gradient(135deg, #4299e1, #3182ce);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .no-data button:hover {
+            background: linear-gradient(135deg, #3182ce, #2b6cb0);
+            transform: translateY(-2px);
+        }
+
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 1200px) {
+            .container-collect {
+                flex-direction: column;
+            }
+            
+            .left-section, .right-section {
+                width: 100%;
+            }
+        }
+    </style>
+
+</head>
+<body>
+    <!-- 采集页容器 -->
+    <div class="page-container page-collect">
+        <div class="container-collect">
+            <div class="left-section">
+                <button id="connectBtn">连接 CH340 串口</button>
+
+                <div class="angle-alarm-container">
+                    <div id="angleValue">--.--°</div>
+                    <div class="alarm-setting">
+                        <label>报警角度阈值 (°)</label>
+                        <input type="number" id="alarmThreshold" value="5" min="0" step="0.5">
+                        <button id="setAlarmBtn">确认设置</button>
+                    </div>
+                </div>
+
+                <div id="status">未连接</div>
+                <div id="alarmStatus"></div>
+
+                <!-- 地震标记控制区 -->
+                <div class="earthquake-mark">
+                    <button id="markStartBtn">手动标记地震起始</button>
+                    <button id="markEndBtn">手动标记地震终止</button>
+                    <span id="earthquakeStatus">状态：静态监测中</span>
+                </div>
+
+                <!-- 地震记录管理 -->
+                <div class="earthquake-records">
+                    <h3>地震记录管理</h3>
+                    <div class="records-list" id="recordsList">
+                        <!-- 记录将通过JavaScript动态添加 -->
+                    </div>
+                    <button id="clearAllBtn" style="padding: 8px 16px; background: #e53e3e; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                        清空所有记录
+                    </button>
+                </div>
+
+                <button id="spectrumBtn">进入地震谱分析</button>
+
+                <div class="cube-container">
+                    <div class="cube">
+                        <div class="face front">前</div>
+                        <div class="face back">后</div>
+                        <div class="face left">左</div>
+                        <div class="face right">右</div>
+                        <div class="face top">上</div>
+                        <div class="face bottom">下</div>
+                    </div>
+                </div>
+            </div>
+            <div class="right-section">
+                <div id="chart-container-collect"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分析页容器 -->
+    <div class="page-container page-analysis">
+        <!-- 顶部标题+基础数据 -->
+        <div class="header-analysis">
+            <h1>地震谱分析与房屋振动模拟</h1>
+            <div class="data-basic">
+                <span>选择地震记录：</span>
+                <select id="earthquake-record-select" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">
+                    <option value="">请选择地震记录</option>
+                </select>
+                <span>地震起始时间：<strong id="start-time">-</strong></span>
+                <span>地震终止时间：<strong id="end-time">-</strong></span>
+                <span>地震持续时长：<strong id="earthquake-duration">-</strong></span>
+                <span>采集数据帧数：<strong id="data-count">-</strong></span>
+            </div>
+        </div>
+
+        <!-- 主体内容 -->
+        <div class="container-analysis">
+            <!-- 左侧建筑模拟 -->
+            <div class="house-simulate">
+                <h2>建筑振动模拟</h2>
+                <div class="model-selector">
+                    <select id="building-type-select">
+                        <option value="villa">乡村别墅</option>
+                        <option value="apartment">公寓住宅</option>
+                        <option value="house">普通住宅</option>
+                    </select>
+                </div>
+                <div class="house-container">
+                    <!-- 别墅模型 -->
+                    <div class="building-model villa-model" id="villa-model">
+                        <div class="villa-building">
+                            <div class="villa-base"></div>
+                            <div class="villa-wall-front">
+                                <div class="villa-door"></div>
+                                <div class="villa-window villa-window-front1"></div>
+                                <div class="villa-window villa-window-front2"></div>
+                            </div>
+                            <div class="villa-wall-back"></div>
+                            <div class="villa-wall-left">
+                                <div class="villa-window villa-window-left1"></div>
+                                <div class="villa-window villa-window-left2"></div>
+                            </div>
+                            <div class="villa-wall-right"></div>
+                            <div class="villa-roof">
+                                <div class="roof-front"></div>
+                                <div class="roof-back"></div>
+                                <div class="roof-left"></div>
+                                <div class="roof-right"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 公寓模型 -->
+                    <div class="building-model apartment-model" id="apartment-model">
+                        <div class="apartment-building">
+                            <div class="apartment-base"></div>
+                            <div class="apartment-wall-front">
+                                <!-- 第一排窗户 -->
+                                <div class="apartment-window apartment-window-row1 apartment-window-col1"></div>
+                                <div class="apartment-window apartment-window-row1 apartment-window-col2"></div>
+                                <div class="apartment-window apartment-window-row1 apartment-window-col3"></div>
+                                <!-- 第二排窗户 -->
+                                <div class="apartment-window apartment-window-row2 apartment-window-col1"></div>
+                                <div class="apartment-window apartment-window-row2 apartment-window-col2"></div>
+                                <div class="apartment-window apartment-window-row2 apartment-window-col3"></div>
+                                <!-- 第三排窗户 -->
+                                <div class="apartment-window apartment-window-row3 apartment-window-col1"></div>
+                                <div class="apartment-window apartment-window-row3 apartment-window-col2"></div>
+                                <div class="apartment-window apartment-window-row3 apartment-window-col3"></div>
+                            </div>
+                            <div class="apartment-wall-back"></div>
+                            <div class="apartment-wall-left"></div>
+                            <div class="apartment-wall-right"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- 普通住宅模型 -->
+                    <div class="building-model house-model" id="house-model">
+                        <div class="residence-building">
+                            <div class="residence-base"></div>
+                            <div class="residence-wall-front">
+                                <div class="residence-door"></div>
+                                <div class="residence-window residence-window1"></div>
+                                <div class="residence-window residence-window2"></div>
+                            </div>
+                            <div class="residence-wall-back"></div>
+                            <div class="residence-wall-left"></div>
+                            <div class="residence-wall-right"></div>
+                            <div class="residence-roof">
+                                <div class="residence-roof-front"></div>
+                                <div class="residence-roof-back"></div>
+                                <div class="residence-roof-left"></div>
+                                <div class="residence-roof-right"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="simulate-control">
+                    <button id="play-btn">开始振动模拟</button>
+                    <button id="pause-btn">暂停振动模拟</button>
+                </div>
+                <div class="simulate-status">模拟状态：<span id="simulate-state">未开始</span></div>
+            </div>
+
+            <!-- 右侧地震谱分析 -->
+            <div class="spectrum-analysis">
+                <h2>地震谱核心分析</h2>
+                <div class="charts-group">
+                    <div class="chart-item" id="time-domain-chart"></div>
+                    <div class="chart-item" id="freq-domain-chart"></div>
+                    <div class="chart-item" id="response-spectrum-chart"></div>
+                </div>
+                <div class="danger-frequency">
+                    <h3><i>⚠️</i> 高危害地震频率汇总</h3>
+                    <div class="frequency-list">
+                        <div class="frequency-item">
+                            <div class="num">Top1</div>
+                            <div class="val">危害最大频率：<strong id="freq-top1">-</strong></div>
+                        </div>
+                        <div class="frequency-item">
+                            <div class="num">Top2</div>
+                            <div class="val">危害次大频率：<strong id="freq-top2">-</strong></div>
+                        </div>
+                        <div class="frequency-item">
+                            <div class="num">Top3</div>
+                            <div class="val">危害第三频率：<strong id="freq-top3">-</strong></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部返回按钮 -->
+        <div class="footer-control">
+            <button id="back-btn">返回MPU6050数据采集页</button>
+        </div>
+    </div>
+
+    <!-- 无数据提示弹窗 -->
+    <div class="no-data" id="no-data-modal">
+        <h2>未获取地震数据</h2>
+        <p>请先完成地震数据采集（标记起始+终止）后再进入分析</p>
+        <button id="modal-back-btn">返回采集页</button>
+    </div>
+
+    <script>
+        // 新增：地震记录管理相关变量
+        let earthquakeRecords = JSON.parse(localStorage.getItem('earthquakeRecords')) || [];
+        let currentEarthquakeIndex = -1;
+
+        // 采集页核心变量（保持不变）
+        const INIT_ROTATE_X = 10;
+        const INIT_ROTATE_Y = 10;
+        const ALARM_DELAY = 500;
+        const chartDomCollect = document.getElementById('chart-container-collect');
+        const myChartCollect = echarts.init(chartDomCollect);
+        let angleDataCollect = [];
+        let pitchDataCollect = [];
+        let rollDataCollect = [];
+        let lastValidAngle = 0;
+        let lastValidPitch = 0;
+        let lastValidRoll = 0;
+        let serialPort;
+        let reader;
+        const decoder = new TextDecoder('utf-8');
+        let dataBuffer = '';
+        let alarmThreshold = 5;
+        let isInAlarm = false;
+        let alarmTimer = null;
+
+        // 地震数据相关变量
+        let isEarthquakeStart = false;
+        let isEarthquakeEnd = false;
+        let earthquakeData = {
+            startTime: null,
+            endTime: null,
+            duration: 0,
+            pitchList: [],
+            rollList: [],
+            timeList: []
+        };
+        const ANGLE_CHANGE_THRESHOLD = 1.0;
+        let lastPitch = 0;
+        let lastRoll = 0;
+        let lastTime = 0;
+        let startCount = 0;
+        let endCount = 0;
+        // 新增：手动模式标记（用于区分手动/自动记录）
+        let isManualMode = false;
+
+
+        // 采集页图表初始化
+        const optionCollect = {
+            title: { 
+                text: 'MPU6050 角度实时曲线', 
+                textStyle: { 
+                    fontSize: 16,
+                    color: '#e0e0e0'  // 标题颜色改为浅色
+                } 
+            },
+            tooltip: { 
+                trigger: 'axis',
+                backgroundColor: 'rgba(30, 30, 30, 0.8)', // 深色背景
+                borderColor: '#555',
+                textStyle: {
+                    color: '#e0e0e0'
+                }
+            },
+            legend: { 
+                data: ['Angle', 'Pitch', 'Roll'], 
+                top: 40,
+                textStyle: {
+                    color: '#e0e0e0'  // 图例文字颜色
+                }
+            },
+            grid: { 
+                left: '5%', 
+                right: '5%', 
+                bottom: '15%', 
+                top: '20%', 
+                containLabel: true,
+                borderColor: '#444', // 网格区域边框颜色
+            },
+            xAxis: {
+                type: 'time',
+                name: '时间',
+                nameTextStyle: {
+                    color: '#e0e0e0'
+                },
+                axisLabel: {
+                    rotate: 45,
+                    interval: 3,
+                    fontSize: 11,
+                    color: '#e0e0e0'  // x轴标签颜色
+                },
+                axisLine: {
+                    lineStyle: {
+                        color: '#e0e0e0'  // x轴线颜色
+                    }
+                },
+                axisTick: {
+                    lineStyle: {
+                        color: '#e0e0e0'  // x轴刻度颜色
+                    }
+                },
+                splitLine: {
+                    lineStyle: {
+                        color: '#444'  // x轴分割线颜色
+                    }
+                },
+                splitNumber: 8
+            },
+            yAxis: { 
+                type: 'value', 
+                name: '角度值 (°)', 
+                min: -30, 
+                max: 30,
+                nameTextStyle: {
+                    color: '#e0e0e0'
+                },
+                axisLabel: {
+                    color: '#e0e0e0'  // y轴标签颜色
+                },
+                axisLine: {
+                    lineStyle: {
+                        color: '#e0e0e0'  // y轴线颜色
+                    }
+                },
+                axisTick: {
+                    lineStyle: {
+                        color: '#e0e0e0'  // y轴刻度颜色
+                    }
+                },
+                splitLine: {
+                    lineStyle: {
+                        color: '#444'  // y轴分割线颜色
+                    }
+                }
+            },
+            series: [
+                { name: 'Angle', type: 'line', data: angleDataCollect, itemStyle: { color: '#007bff' }, smooth: true },
+                { name: 'Pitch', type: 'line', data: pitchDataCollect, itemStyle: { color: '#28a745' }, smooth: true },
+                { name: 'Roll', type: 'line', data: rollDataCollect, itemStyle: { color: '#dc3545' }, smooth: true }
+            ]
+        };
+        myChartCollect.setOption(optionCollect);
+
+        // 页面加载完成初始化
+        window.addEventListener('DOMContentLoaded', () => {
+
+            // 强制设置ECharts深色主题
+            echarts.registerTheme('dark', {
+                backgroundColor: 'transparent',
+                textStyle: {
+                    color: '#e0e0e0'
+                },
+                title: {
+                    textStyle: {
+                        color: '#e0e0e0'
+                    }
+                },
+                legend: {
+                    textStyle: {
+                        color: '#e0e0e0'
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(30, 30, 30, 0.8)',
+                    borderColor: '#555',
+                    textStyle: {
+                        color: '#e0e0e0'
+                    }
+                }
+            });
+
+            document.querySelector('.cube').style.transform = `rotateX(${INIT_ROTATE_X}deg) rotateY(${INIT_ROTATE_Y}deg)`;
+            // 绑定建筑模型选择事件
+            document.getElementById('building-type-select').addEventListener('change', switchBuildingModel);
+            
+            // 新增：初始化地震记录列表
+            updateRecordsList();
+            // 地震标记按钮事件绑定
+            document.getElementById('markStartBtn').addEventListener('click', () => {
+                if (!serialPort) {
+                    alert('请先连接串口');
+                    return;
+                }
+                
+                if (!isEarthquakeStart && !isEarthquakeEnd) {
+                    isManualMode = true; // 进入手动模式，暂停自动判断
+                    isEarthquakeStart = true;
+                    isEarthquakeEnd = false;
+                    earthquakeData = { 
+                        id: Date.now().toString(),
+                        startTime: Date.now(),
+                        endTime: null,
+                        duration: 0,
+                        pitchList: [],
+                        rollList: [],
+                        timeList: []
+                    };
+                    
+                    // 更新按钮状态
+                    document.getElementById('markStartBtn').classList.add('active');
+                    document.getElementById('markEndBtn').classList.add('active');
+                    document.getElementById('markEndBtn').style.opacity = '1';
+                    document.getElementById('markEndBtn').style.cursor = 'pointer';
+                    document.getElementById('earthquakeStatus').textContent = '状态：手动记录地震中...';
+                    
+                    // 重置自动判断计数（防止自动逻辑干扰）
+                    startCount = 0;
+                    endCount = 0;
+                }
+            });
+
+            document.getElementById('markEndBtn').addEventListener('click', () => {
+                if (isEarthquakeStart && !isEarthquakeEnd && isManualMode) {
+                    isEarthquakeEnd = true;
+                    isEarthquakeStart = false;
+                    isManualMode = false; // 退出手动模式，恢复自动判断
+                    earthquakeData.endTime = Date.now(); // 同上，用你实际的变量名
+                    earthquakeData.duration = (earthquakeData.endTime - earthquakeData.startTime) / 1000;
+                    
+                    // 保存记录
+                    earthquakeRecords.push(earthquakeData);
+                    localStorage.setItem('earthquakeRecords', JSON.stringify(earthquakeRecords)); // 直接保存
+                    updateRecordsList();
+
+                    // 更新按钮状态
+                    document.getElementById('markStartBtn').classList.remove('active');
+                    document.getElementById('markEndBtn').classList.remove('active');
+                    document.getElementById('markEndBtn').style.opacity = '0.5';
+                    document.getElementById('markEndBtn').style.cursor = 'not-allowed';
+                    document.getElementById('earthquakeStatus').textContent = '状态：手动记录已保存';
+                    document.getElementById('spectrumBtn').classList.add('active');
+                    document.getElementById('spectrumBtn').style.opacity = '1';
+                }
+            });
+        });
+
+        // 建筑模型切换
+        function switchBuildingModel() {
+            const selected = document.getElementById('building-type-select').value;
+            
+            // 隐藏所有模型
+            document.querySelectorAll('.building-model').forEach(model => {
+                model.style.display = 'none';
+            });
+            
+            // 显示选中的模型
+            document.getElementById(`${selected}-model`).style.display = 'block';
+        }
+
+        // 新增：地震记录管理功能
+        function updateRecordsList() {
+            const recordsList = document.getElementById('recordsList');
+            recordsList.innerHTML = '';
+            
+            if (earthquakeRecords.length === 0) {
+                recordsList.innerHTML = '<div style="text-align: center; color: #718096; padding: 20px;">暂无地震记录</div>';
+                return;
+            }
+            
+            earthquakeRecords.forEach((record, index) => {
+                const recordItem = document.createElement('div');
+                recordItem.className = 'record-item';
+                recordItem.innerHTML = `
+                    <div class="record-info">
+                        <div class="record-time">${formatTime(record.startTime)}</div>
+                        <div class="record-duration">持续 ${record.duration.toFixed(1)}秒，${record.pitchList.length}帧数据</div>
+                    </div>
+                    <div class="record-actions">
+                        <button class="record-btn select-btn" onclick="selectRecord(${index})">选择</button>
+                        <button class="record-btn delete-btn" onclick="deleteRecord(${index})">删除</button>
+                    </div>
+                `;
+                recordsList.appendChild(recordItem);
+            });
+        }
+
+        function saveRecord() {
+            earthquakeRecords.push({...earthquakeData});
+            localStorage.setItem('earthquakeRecords', JSON.stringify(earthquakeRecords));
+            updateRecordsList();
+        }
+
+        function deleteRecord(index) {
+            if (confirm('确定要删除这条地震记录吗？')) {
+                earthquakeRecords.splice(index, 1);
+                localStorage.setItem('earthquakeRecords', JSON.stringify(earthquakeRecords));
+                updateRecordsList();
+            }
+        }
+
+        function selectRecord(index) {
+            currentEarthquakeIndex = index;
+            const record = earthquakeRecords[index];
+            earthquakeData = {...record};
+            
+            // 更新状态显示
+            document.getElementById('earthquakeStatus').textContent = 
+                `状态：已选择记录，时长${earthquakeData.duration.toFixed(1)}s`;
+            document.getElementById('spectrumBtn').classList.add('active');
+            document.getElementById('spectrumBtn').style.opacity = 1;
+            document.getElementById('spectrumBtn').style.cursor = 'pointer';
+        }
+
+        // 清空所有记录
+        document.getElementById('clearAllBtn').addEventListener('click', () => {
+            if (confirm('确定要清空所有地震记录吗？')) {
+                earthquakeRecords = [];
+                localStorage.setItem('earthquakeRecords', JSON.stringify(earthquakeRecords));
+                updateRecordsList();
+            }
+        });
+
+        // 元素获取（保持不变）
+        const connectBtn = document.getElementById('connectBtn');
+        const angleValue = document.getElementById('angleValue');
+        const statusText = document.getElementById('status');
+        const alarmStatus = document.getElementById('alarmStatus');
+        const cube = document.querySelector('.cube');
+        const alarmThresholdInput = document.getElementById('alarmThreshold');
+        const setAlarmBtn = document.getElementById('setAlarmBtn');
+
+        // 报警阈值设置（保持不变）
+        setAlarmBtn.addEventListener('click', () => {
+            const inputValue = parseFloat(alarmThresholdInput.value);
+            if (!isNaN(inputValue) && inputValue >= 0) {
+                alarmThreshold = inputValue;
+                statusText.textContent = `已连接，报警阈值：${alarmThreshold}°`;
+            } else {
+                statusText.textContent = '输入无效，请输入非负数字';
+            }
+        });
+
+        // 串口连接（保持不变）
+        connectBtn.addEventListener('click', async () => {
+            if (!serialPort) {
+                try {
+                    serialPort = await navigator.serial.requestPort();
+                    await serialPort.open({
+                        baudRate: 115200,
+                        dataBits: 8,
+                        stopBits: 1,
+                        parity: 'none'
+                    });
+                    connectBtn.textContent = '断开串口';
+                    statusText.textContent = `已连接，报警阈值：${alarmThreshold}°`;
+                    await readSerialData();
+                } catch (error) {
+                    statusText.textContent = `连接失败：${error.message}`;
+                }
+            } else {
+                if (reader) reader.releaseLock();
+                await serialPort.close();
+                serialPort = null;
+                connectBtn.textContent = '连接 CH340 串口';
+                angleValue.textContent = '--.--°';
+                statusText.textContent = '已断开';
+                alarmStatus.textContent = '';
+                cube.style.transform = `rotateX(${INIT_ROTATE_X}deg) rotateY(${INIT_ROTATE_Y}deg)`;
+                angleValue.classList.remove('alarm');
+                cube.classList.remove('alarm');
+                isInAlarm = false;
+                clearTimeout(alarmTimer);
+                resetEarthquakeStatus();
+            }
+        });
+
+        // 地震标记交互（修改标记结束逻辑）
+        const markStartBtn = document.getElementById('markStartBtn');
+        const markEndBtn = document.getElementById('markEndBtn');
+        const earthquakeStatus = document.getElementById('earthquakeStatus');
+        const spectrumBtn = document.getElementById('spectrumBtn');
+
+        // 手动标记起始（保持不变）
+        markStartBtn.addEventListener('click', () => {
+            if (isEarthquakeStart) return;
+            isEarthquakeStart = true;
+            isEarthquakeEnd = false;
+            earthquakeData.startTime = Date.now();
+            earthquakeData.pitchList = [];
+            earthquakeData.rollList = [];
+            earthquakeData.timeList = [];
+            markStartBtn.classList.add('active');
+            markEndBtn.classList.add('active');
+            markEndBtn.style.opacity = 1;
+            markEndBtn.style.cursor = 'pointer';
+            earthquakeStatus.textContent = '状态：地震监测中';
+            endCount = 0;
+            statusText.textContent = `已连接，报警阈值：${alarmThreshold}°，地震起始已标记`;
+        });
+
+        // 手动标记终止（修改：保存记录）
+        markEndBtn.addEventListener('click', () => {
+            if (!isEarthquakeStart || isEarthquakeEnd) return;
+            isEarthquakeEnd = true;
+            earthquakeData.endTime = Date.now();
+            earthquakeData.duration = (earthquakeData.endTime - earthquakeData.startTime) / 1000;
+            markEndBtn.classList.remove('active');
+            earthquakeStatus.textContent = `状态：地震结束，时长${earthquakeData.duration.toFixed(1)}s`;
+            spectrumBtn.classList.add('active');
+            spectrumBtn.style.opacity = 1;
+            spectrumBtn.style.cursor = 'pointer';
+            statusText.textContent = `已连接，报警阈值：${alarmThreshold}°，地震数据采集完成`;
+            
+            // 修改：保存记录到记录列表
+            saveRecord();
+        });
+
+        // 自动判断地震起始/终止（保持不变）
+        function autoJudgeEarthquake(pitch, roll, currTime) {
+            // 关键：如果是手动模式，直接返回，不执行自动判断
+            if (isManualMode) {
+                // 但手动模式下需要收集数据（如果正在记录）
+                if (isEarthquakeStart && !isEarthquakeEnd) {
+                    earthquakeData.pitchList.push(pitch);
+                    earthquakeData.rollList.push(roll);
+                    earthquakeData.timeList.push(currTime);
+                }
+                return;
+            }
+
+            // 以下是原有的自动判断逻辑（只在非手动模式下执行）
+            if (lastTime === 0) {
+                lastTime = currTime;
+                lastPitch = pitch;
+                lastRoll = roll;
+                return;
+            }
+            const timeDiff = (currTime - lastTime) / 1000;
+            const pitchChange = Math.abs(pitch - lastPitch) / timeDiff;
+            const rollChange = Math.abs(roll - lastRoll) / timeDiff;
+
+            // 自动判断地震开始（仅在非手动模式）
+            if (!isEarthquakeStart) {
+                if (pitchChange > ANGLE_CHANGE_THRESHOLD || rollChange > ANGLE_CHANGE_THRESHOLD) {
+                    startCount++;
+                    if (startCount >= 3) { // 连续3次触发才认为开始（可调整）
+                        // 自动开始记录（和手动逻辑类似）
+                        isEarthquakeStart = true;
+                        earthquakeData = {  // 改为 earthquakeData
+                            id: Date.now().toString(),
+                            startTime: currTime,
+                            endTime: null,
+                            duration: 0,
+                            pitchList: [],
+                            rollList: [],
+                            timeList: []
+                        };
+                        document.getElementById('earthquakeStatus').textContent = '状态：自动检测到地震，记录中...';
+                        startCount = 0;
+                    }
+                } else {
+                    startCount = 0;
+                }
+            }
+            // 自动判断地震结束（仅在非手动模式且正在记录）
+            else if (isEarthquakeStart && !isEarthquakeEnd) {
+                // 收集数据 - 使用 earthquakeData
+                earthquakeData.pitchList.push(pitch);
+                earthquakeData.rollList.push(roll);
+                earthquakeData.timeList.push(currTime);
+
+                // 判断是否结束
+                if (pitchChange <= ANGLE_CHANGE_THRESHOLD && rollChange <= ANGLE_CHANGE_THRESHOLD) {
+                    endCount++;
+                    if (endCount >= 5) { // 连续10次平稳才认为结束（可调整，值越大记录越长）
+                        isEarthquakeEnd = true;
+                        earthquakeData.endTime = currTime;  // 改为 earthquakeData
+                        earthquakeData.duration = (earthquakeData.endTime - earthquakeData.startTime) / 1000;
+                        
+                        // 保存记录
+                        earthquakeRecords.push({...earthquakeData});
+                        localStorage.setItem('earthquakeRecords', JSON.stringify(earthquakeRecords));
+                        updateRecordsList();
+                        
+                        document.getElementById('earthquakeStatus').textContent = `状态：自动记录结束，时长${earthquakeData.duration.toFixed(1)}s`;
+                        document.getElementById('spectrumBtn').classList.add('active');
+                        
+                        // 重置状态，准备检测余震
+                        isEarthquakeStart = false;
+                        isEarthquakeEnd = false;
+                        endCount = 0;
+                    }
+                } else {
+                    endCount = 0; // 有波动则重置结束计数
+                }
+            }
+
+            lastPitch = pitch;
+            lastRoll = roll;
+            lastTime = currTime;
+        }
+
+        // 重置地震状态（保持不变）
+        function resetEarthquakeStatus() {
+            isEarthquakeStart = false;
+            isEarthquakeEnd = false;
+            earthquakeData.startTime = null;
+            earthquakeData.endTime = null;
+            earthquakeData.duration = 0;
+            markStartBtn.classList.remove('active');
+            markEndBtn.classList.remove('active');
+            markEndBtn.style.opacity = 0.5;
+            markEndBtn.style.cursor = 'not-allowed';
+            spectrumBtn.classList.remove('active');
+            spectrumBtn.style.opacity = 0.5;
+            spectrumBtn.style.cursor = 'not-allowed';
+            earthquakeStatus.textContent = '状态：静态监测中';
+            startCount = 0;
+            endCount = 0;
+            lastTime = 0;
+            lastPitch = 0;
+            lastRoll = 0;
+        }
+
+        // 串口数据读取与处理（保持不变）
+        async function readSerialData() {
+            while (serialPort.readable) {
+                reader = serialPort.readable.getReader();
+                try {
+                    while (true) {
+                        const { value, done } = await reader.read();
+                        if (done) break;
+
+                        dataBuffer += decoder.decode(value, { stream: true });
+                        const dataLines = dataBuffer.split(/[\r\n]+/);
+                        
+                        for (let i = 0; i < dataLines.length - 1; i++) {
+                            let line = dataLines[i].trim();
+                            if (!line) continue;
+
+                            const parts = line.split(',').map(part => part.trim());
+                            if (parts.length !== 3) {
+                                console.warn("参数数量错误，跳过：", line);
+                                continue;
+                            }
+
+                            // 关键修复：角度值除以10，解决角度变化过大问题
+                            const angleInt = parseInt(parts[0], 10);
+                            const pitchInt = parseInt(parts[1], 10);
+                            const rollInt = parseInt(parts[2], 10);
+                            
+                            if (isNaN(angleInt) || isNaN(pitchInt) || isNaN(rollInt)) {
+                                console.warn("非数字参数，跳过：", line);
+                                continue;
+                            }
+
+                            // 除以10进行缩放
+                            let angle = angleInt / 10;
+                            let pitch = pitchInt / 10;
+                            let roll = rollInt / 10;
+
+                            // 异常值过滤
+                            if (angle < -90 || angle > 90) angle = lastValidAngle;
+                            else lastValidAngle = angle;
+                            if (pitch < -90 || pitch > 90) pitch = lastValidPitch;
+                            else lastValidPitch = pitch;
+                            if (roll < -90 || roll > 90) roll = lastValidRoll;
+                            else lastValidRoll = roll;
+                            
+                            // 更新UI
+                            angleValue.textContent = `${angle.toFixed(1)}°`;
+                            cube.style.transform = `rotateX(${INIT_ROTATE_X + pitch}deg) rotateY(${INIT_ROTATE_Y + roll}deg)`;
+
+                            // 报警处理
+                            if (angle > alarmThreshold) {
+                                clearTimeout(alarmTimer);
+                                if (!isInAlarm) {
+                                    isInAlarm = true;
+                                    angleValue.classList.add('alarm');
+                                    cube.classList.add('alarm');
+                                    alarmStatus.textContent = `⚠️ 报警：超过${alarmThreshold}°`;
+                                }
+                            } else {
+                                if (isInAlarm) {
+                                    alarmTimer = setTimeout(() => {
+                                        isInAlarm = false;
+                                        angleValue.classList.remove('alarm');
+                                        cube.classList.remove('alarm');
+                                        alarmStatus.textContent = '';
+                                    }, ALARM_DELAY);
+                                }
+                            }
+
+                            // 地震数据处理
+                            const currTime = Date.now();
+                            autoJudgeEarthquake(pitch, roll, currTime);
+                            if (isEarthquakeStart && !isEarthquakeEnd) {
+                                earthquakeData.pitchList.push(pitch);
+                                earthquakeData.rollList.push(roll);
+                                earthquakeData.timeList.push(currTime);
+                            }
+
+                            // 更新图表
+                            const now = new Date();
+                            angleDataCollect.push({ value: [now, angle] });
+                            pitchDataCollect.push({ value: [now, pitch] });
+                            rollDataCollect.push({ value: [now, roll] });
+
+                            if (angleDataCollect.length > 100) {
+                                angleDataCollect.shift();
+                                pitchDataCollect.shift();
+                                rollDataCollect.shift();
+                            }
+
+                            myChartCollect.setOption({ series: optionCollect.series });
+                        }
+                        
+                        dataBuffer = dataLines[dataLines.length - 1];
+                    }
+                } catch (error) {
+                    statusText.textContent = `读取错误：${error.message}`;
+                } finally {
+                    reader.releaseLock();
+                }
+            }
+        }
+
+        // 页面切换逻辑（修改：检查是否有选择记录）
+        spectrumBtn.addEventListener('click', () => {
+            if (earthquakeRecords.length === 0 && !isEarthquakeEnd) {
+                document.getElementById('no-data-modal').style.display = 'block';
+                return;
+            }
+            
+            // 如果没有当前记录但已有记录，选择最新的记录
+            if (!isEarthquakeEnd && earthquakeRecords.length > 0) {
+                currentEarthquakeIndex = earthquakeRecords.length - 1;
+                earthquakeData = {...earthquakeRecords[currentEarthquakeIndex]};
+            }
+            
+            document.querySelector('.page-collect').style.display = 'none';
+            document.querySelector('.page-analysis').style.display = 'block';
+            initAnalysisPage();
+        });
+
+        // 分析页返回
+        document.getElementById('back-btn').addEventListener('click', () => {
+            document.querySelector('.page-analysis').style.display = 'none';
+            document.querySelector('.page-collect').style.display = 'block';
+            if (simulateTimer) clearInterval(simulateTimer);
+            isSimulating = false;
+            document.getElementById('simulate-state').textContent = '未开始';
+        });
+        document.getElementById('modal-back-btn').addEventListener('click', () => {
+            document.getElementById('no-data-modal').style.display = 'none';
+        });
+
+        // 分析页核心逻辑
+        let analysisData = null;
+        let isSimulating = false;
+        let simulateIndex = 0;
+        let simulateTimer = null;
+        const HOUSE_INIT_ROTATE_X = 5;
+        const HOUSE_INIT_ROTATE_Y = 5;
+        let timeDomainChart, freqDomainChart, responseSpectrumChart;
+
+        // 初始化分析页（修改：添加记录选择功能）
+        function initAnalysisPage() {
+            // 更新记录选择下拉框
+            const recordSelect = document.getElementById('earthquake-record-select');
+            recordSelect.innerHTML = '<option value="">请选择地震记录</option>';
+            
+            earthquakeRecords.forEach((record, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = `${formatTime(record.startTime)} (${record.duration.toFixed(1)}s)`;
+                if (index === currentEarthquakeIndex) {
+                    option.selected = true;
+                }
+                recordSelect.appendChild(option);
+            });
+            
+            // 绑定选择事件
+            recordSelect.addEventListener('change', (e) => {
+                const selectedIndex = parseInt(e.target.value);
+                if (!isNaN(selectedIndex) && selectedIndex >= 0) {
+                    currentEarthquakeIndex = selectedIndex;
+                    analysisData = {...earthquakeRecords[selectedIndex]};
+                    renderAnalysisBasicData();
+                    initAnalysisCharts();
+                }
+            });
+            
+            // 设置当前分析数据
+            if (currentEarthquakeIndex >= 0) {
+                analysisData = {...earthquakeRecords[currentEarthquakeIndex]};
+            } else if (earthquakeRecords.length > 0) {
+                currentEarthquakeIndex = earthquakeRecords.length - 1;
+                analysisData = {...earthquakeRecords[currentEarthquakeIndex]};
+                recordSelect.value = currentEarthquakeIndex;
+            } else {
+                analysisData = earthquakeData;
+            }
+            
+            renderAnalysisBasicData();
+            initAnalysisCharts();
+            bindAnalysisEvents();
+        }
+
+        // 渲染基础数据
+        function renderAnalysisBasicData() {
+            document.getElementById('start-time').textContent = formatTime(analysisData.startTime);
+            document.getElementById('end-time').textContent = formatTime(analysisData.endTime);
+            document.getElementById('earthquake-duration').textContent = analysisData.duration.toFixed(1) + 's';
+            document.getElementById('data-count').textContent = analysisData.pitchList.length + '帧';
+        }
+
+        // 时间格式化
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            const year = date.getFullYear();
+            const month = padZero(date.getMonth() + 1);
+            const day = padZero(date.getDate());
+            const hour = padZero(date.getHours());
+            const minute = padZero(date.getMinutes());
+            const second = padZero(date.getSeconds());
+            const ms = padZero(Math.floor(date.getMilliseconds() / 10), 2);
+            return `${year}-${month}-${day} ${hour}:${minute}:${second}.${ms}`;
+        }
+
+        function padZero(num, len = 2) {
+            return num.toString().padStart(len, '0');
+        }
+
+        // 初始化分析页图表（保持不变）
+        function initAnalysisCharts() {
+            // 1. 时域数据图表
+            // 1. 时域数据图表
+            timeDomainChart = echarts.init(document.getElementById('time-domain-chart'), 'dark');
+            const timeDomainOption = {
+                title: { 
+                    text: '地震时段时域数据（Pitch/Roll角变化）', 
+                    left: 'center', 
+                    textStyle: { 
+                        fontSize: 14,
+                        color: '#e0e0e0'
+                    },
+                    top: 10 
+                },
+                tooltip: { 
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(30, 30, 30, 0.8)',
+                    borderColor: '#555',
+                    textStyle: {
+                        color: '#e0e0e0'
+                    }
+                },
+                legend: { 
+                    data: ['Pitch角', 'Roll角'], 
+                    top: 40,
+                    textStyle: {
+                        color: '#e0e0e0'
+                    }
+                },
+                grid: { 
+                    left: '5%', 
+                    right: '5%', 
+                    bottom: '10%', 
+                    top: '20%', 
+                    containLabel: true,
+                    borderColor: '#444'
+                },
+                xAxis: {
+                    type: 'category',
+                    name: '采集时刻',
+                    nameTextStyle: {
+                        color: '#e0e0e0'
+                    },
+                    data: analysisData.timeList.map(t => formatTime(t).split(' ')[1].slice(0, 10)),
+                    axisLabel: { 
+                        rotate: 45, 
+                        fontSize: 11,
+                        color: '#e0e0e0'
+                    },
+                    axisLine: {
+                        lineStyle: {
+                            color: '#e0e0e0'
+                        }
+                    },
+                    axisTick: {
+                        lineStyle: {
+                            color: '#e0e0e0'
+                        }
+                    },
+                    splitLine: {
+                        lineStyle: {
+                            color: '#444'
+                        }
+                    },
+                    splitNumber: 10
+                },
+                yAxis: { 
+                    type: 'value', 
+                    name: '角度值（°）', 
+                    min: -30, 
+                    max: 30,
+                    nameTextStyle: {
+                        color: '#e0e0e0'
+                    },
+                    axisLabel: {
+                        color: '#e0e0e0'
+                    },
+                    axisLine: {
+                        lineStyle: {
+                            color: '#e0e0e0'
+                        }
+                    },
+                    axisTick: {
+                        lineStyle: {
+                            color: '#e0e0e0'
+                        }
+                    },
+                    splitLine: {
+                        lineStyle: {
+                            color: '#444'
+                        }
+                    }
+                },
+                series: [
+                    { name: 'Pitch角', type: 'line', data: analysisData.pitchList, itemStyle: { color: '#4299e1' }, smooth: true },
+                    { name: 'Roll角', type: 'line', data: analysisData.rollList, itemStyle: { color: '#dc3545' }, smooth: true }
+                ]
+            };
+            timeDomainChart.setOption(timeDomainOption);
+
+            // 2. 频域数据图表（FFT转换，过滤低频）
+            const { freqList, pitchFreqAmp, rollFreqAmp } = fftTransform();
+            freqDomainChart = echarts.init(document.getElementById('freq-domain-chart'),'dark');
+            const freqDomainOption = {
+                title: { 
+                    text: '频域数据（FFT转换后频率-幅值）', 
+                    left: 'center', 
+                    textStyle: { 
+                        fontSize: 14,
+                        color: '#e0e0e0'
+                    },
+                    top: 10
+                },
+                tooltip: { 
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(30, 30, 30, 0.8)',
+                    borderColor: '#555',
+                    textStyle: {
+                        color: '#e0e0e0'
+                    }
+                },
+                legend: { 
+                    data: ['Pitch角频域幅值', 'Roll角频域幅值'], 
+                    top: 40,
+                    textStyle: {
+                        color: '#e0e0e0'
+                    }
+                },
+                grid: { 
+                    left: '5%', 
+                    right: '5%', 
+                    bottom: '10%', 
+                    top: '15%', 
+                    containLabel: true,
+                    borderColor: '#444'
+                },
+                xAxis: { 
+                    type: 'value', 
+                    name: '频率（Hz）', 
+                    min: 0, 
+                    max: 5,
+                    nameTextStyle: {
+                        color: '#e0e0e0'
+                    },
+                    axisLabel: {
+                        color: '#e0e0e0'
+                    },
+                    axisLine: {
+                        lineStyle: {
+                            color: '#e0e0e0'
+                        }
+                    },
+                    axisTick: {
+                        lineStyle: {
+                            color: '#e0e0e0'
+                        }
+                    },
+                    splitLine: {
+                        lineStyle: {
+                            color: '#444'
+                        }
+                    }
+                },
+                yAxis: { 
+                    type: 'value', 
+                    name: '频域幅值',
+                    nameTextStyle: {
+                        color: '#e0e0e0'
+                    },
+                    axisLabel: {
+                        color: '#e0e0e0'
+                    },
+                    axisLine: {
+                        lineStyle: {
+                            color: '#e0e0e0'
+                        }
+                    },
+                    axisTick: {
+                        lineStyle: {
+                            color: '#e0e0e0'
+                        }
+                    },
+                    splitLine: {
+                        lineStyle: {
+                            color: '#444'
+                        }
+                    }
+                },
+                series: [
+                    { name: 'Pitch角频域幅值', type: 'line', data: freqList.map((f, i) => [f, pitchFreqAmp[i]]), itemStyle: { color: '#4299e1' } },
+                    { name: 'Roll角频域幅值', type: 'line', data: freqList.map((f, i) => [f, rollFreqAmp[i]]), itemStyle: { color: '#dc3545' } }
+                ]
+            };
+            freqDomainChart.setOption(freqDomainOption);
+
+            // 3. 加速度反应谱图表
+            const { periodList, saPitchList, saRollList, saMaxList } = calcResponseSpectrum(freqList, pitchFreqAmp, rollFreqAmp);
+            responseSpectrumChart = echarts.init(document.getElementById('response-spectrum-chart'),'dark');
+            const responseSpectrumOption = {
+                title: { 
+                    text: '加速度反应谱', 
+                    left: 'center', 
+                    textStyle: { 
+                        fontSize: 14,
+                        color: '#e0e0e0'
+                    },
+                    top: 10
+                },
+                tooltip: { 
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(30, 30, 30, 0.8)',
+                    borderColor: '#555',
+                    textStyle: {
+                        color: '#e0e0e0'
+                    }
+                },
+                legend: { 
+                    data: ['Pitch角对应Sa', 'Roll角对应Sa', '最大Sa'], 
+                    top: 40,
+                    textStyle: {
+                        color: '#e0e0e0'
+                    }
+                },
+                grid: { 
+                    left: '5%', 
+                    right: '5%', 
+                    bottom: '10%', 
+                    top: '20%', 
+                    containLabel: true,
+                    borderColor: '#444'
+                },
+                xAxis: { 
+                    type: 'value', 
+                    name: '周期（s）', 
+                    min: 0.1, 
+                    max: 5,
+                    nameTextStyle: {
+                        color: '#e0e0e0'
+                    },
+                    axisLabel: {
+                        color: '#e0e0e0'
+                    },
+                    axisLine: {
+                        lineStyle: {
+                            color: '#e0e0e0'
+                        }
+                    },
+                    axisTick: {
+                        lineStyle: {
+                            color: '#e0e0e0'
+                        }
+                    },
+                    splitLine: {
+                        lineStyle: {
+                            color: '#444'
+                        }
+                    }
+                },
+                yAxis: { 
+                    type: 'value', 
+                    name: '加速度Sa（m/s²）',
+                    nameTextStyle: {
+                        color: '#e0e0e0'
+                    },
+                    axisLabel: {
+                        color: '#e0e0e0'
+                    },
+                    axisLine: {
+                        lineStyle: {
+                            color: '#e0e0e0'
+                        }
+                    },
+                    axisTick: {
+                        lineStyle: {
+                            color: '#e0e0e0'
+                        }
+                    },
+                    splitLine: {
+                        lineStyle: {
+                            color: '#444'
+                        }
+                    }
+                },
+                series: [
+                    { name: 'Pitch角对应Sa', type: 'line', data: periodList.map((t, i) => [t, saPitchList[i]]), itemStyle: { color: '#4299e1' } },
+                    { name: 'Roll角对应Sa', type: 'line', data: periodList.map((t, i) => [t, saRollList[i]]), itemStyle: { color: '#dc3545' } },
+                    { name: '最大Sa', type: 'line', data: periodList.map((t, i) => [t, saMaxList[i]]), itemStyle: { color: '#fcc367' }, lineStyle: { width: 2 } }
+                ]
+            };
+            responseSpectrumChart.setOption(responseSpectrumOption);
+
+            // 提取高危害频率（过滤0Hz）
+            const dangerFreqs = getDangerFrequencies(freqList, pitchFreqAmp, rollFreqAmp);
+            document.getElementById('freq-top1').textContent = dangerFreqs[0] ? dangerFreqs[0].toFixed(2) + 'Hz' : '-';
+            document.getElementById('freq-top2').textContent = dangerFreqs[1] ? dangerFreqs[1].toFixed(2) + 'Hz' : '-';
+            document.getElementById('freq-top3').textContent = dangerFreqs[2] ? dangerFreqs[2].toFixed(2) + 'Hz' : '-';
+        }
+
+        function fftTransform() {
+            const sampleCount = analysisData.pitchList.length;
+            const sampleTime = analysisData.duration / sampleCount;
+            const sampleRate = 1 / sampleTime;
+
+            const pitchFft = math.fft(analysisData.pitchList.map(v => math.complex(v, 0)));
+            const rollFft = math.fft(analysisData.rollList.map(v => math.complex(v, 0)));
+
+            const freqAmpLen = Math.floor(sampleCount / 2);
+            const freqList = [];
+            const pitchFreqAmp = [];
+            const rollFreqAmp = [];
+
+            // 过滤很低频率，解决0Hz问题
+            const minFrequency = 0.005;
+            
+            for (let i = 0; i < freqAmpLen; i++) {
+                const freq = i * sampleRate / sampleCount;
+                if (freq > 5 || freq < minFrequency) continue;
+                freqList.push(freq);
+                pitchFreqAmp.push(2 * math.abs(pitchFft[i]) / sampleCount);
+                rollFreqAmp.push(2 * math.abs(rollFft[i]) / sampleCount);
+            }
+            return { freqList, pitchFreqAmp, rollFreqAmp };
+        }
+
+        // 计算加速度反应谱
+        function calcResponseSpectrum(freqList, pitchFreqAmp, rollFreqAmp) {
+            const K = 5;
+            const periodList = freqList.map(f => 1 / f);
+            const saPitchList = pitchFreqAmp.map(amp => amp * K);
+            const saRollList = rollFreqAmp.map(amp => amp * K);
+            const saMaxList = saPitchList.map((sa, i) => Math.max(sa, saRollList[i]));
+            return { periodList, saPitchList, saRollList, saMaxList };
+        }
+
+        // 提取Top3高危害频率
+        function getDangerFrequencies(freqList, pitchFreqAmp, rollFreqAmp) {
+            const freqAmpSum = freqList.map((f, i) => ({
+                freq: f,
+                sumAmp: pitchFreqAmp[i] + rollFreqAmp[i]
+            }));
+            // 按幅值排序并取前3
+            const sortedFreq = freqAmpSum.sort((a, b) => b.sumAmp - a.sumAmp).slice(0, 3);
+            return sortedFreq.map(item => item.freq);
+        }
+
+        // 绑定分析页按钮事件（保持不变）
+        function bindAnalysisEvents() {
+            document.getElementById('play-btn').addEventListener('click', startSimulate);
+            document.getElementById('pause-btn').addEventListener('click', pauseSimulate);
+        }
+
+        // 建筑振动模拟
+        function startSimulate() {
+            if (isSimulating) return;
+            isSimulating = true;
+            document.getElementById('simulate-state').textContent = '模拟中';
+            simulateTimer = setInterval(() => {
+                updateBuildingRotate();
+                simulateIndex++;
+                if (simulateIndex >= analysisData.pitchList.length) {
+                    simulateIndex = 0;
+                }
+            }, 50);
+        }
+
+        function pauseSimulate() {
+            if (!isSimulating) return;
+            isSimulating = false;
+            clearInterval(simulateTimer);
+            document.getElementById('simulate-state').textContent = '已暂停';
+        }
+
+        // 更新建筑旋转角度（适用于所有3D模型）
+        function updateBuildingRotate() {
+            const pitch = analysisData.pitchList[simulateIndex];
+            const roll = analysisData.rollList[simulateIndex];
+            const rotateX = HOUSE_INIT_ROTATE_X + pitch;
+            const rotateY = HOUSE_INIT_ROTATE_Y + roll;
+            
+            // 对当前选中的模型应用旋转
+            const selected = document.getElementById('building-type-select').value;
+            document.getElementById(`${selected}-model`).style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+        }
+
+        // 窗口大小变化时调整图表
+        window.addEventListener('resize', () => {
+            myChartCollect.resize();
+            if (timeDomainChart) timeDomainChart.resize();
+            if (freqDomainChart) freqDomainChart.resize();
+            if (responseSpectrumChart) responseSpectrumChart.resize();
+        });
+
+        // 页面关闭清理
+        window.addEventListener('beforeunload', () => {
+            if (reader) reader.releaseLock();
+            if (serialPort) serialPort.close();
+            if (simulateTimer) clearInterval(simulateTimer);
+        });
+    </script>
+</body>
+</html>
